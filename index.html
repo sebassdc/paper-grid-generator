@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Paper Grid Generator</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --border: #e1e4e8;
+    --text: #1c2024;
+    --muted: #6b7280;
+    --accent: #2563eb;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* ---------- Sidebar ---------- */
+  #sidebar {
+    width: 320px;
+    flex: 0 0 320px;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 20px;
+    overflow-y: auto;
+    height: 100vh;
+    position: sticky;
+    top: 0;
+  }
+  #sidebar h1 { font-size: 18px; margin: 0 0 2px; }
+  #sidebar .sub { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+  fieldset {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    margin: 0 0 14px;
+  }
+  legend { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; padding: 0 4px; }
+  label { display: block; font-size: 13px; margin: 8px 0 4px; font-weight: 500; }
+  .row { display: flex; gap: 8px; }
+  .row > div { flex: 1; }
+  select, input[type="number"], input[type="text"] {
+    width: 100%; padding: 7px 8px; border: 1px solid var(--border);
+    border-radius: 6px; font-size: 13px; background: #fff; color: var(--text);
+  }
+  input[type="color"] { width: 100%; height: 34px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
+  .checkbox-row { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; }
+  .checkbox-row label { margin: 0; font-weight: 500; }
+  .checkbox-row input { width: auto; }
+  .seg { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .seg button { flex: 1; border: none; background: #fff; padding: 7px; font-size: 13px; cursor: pointer; color: var(--text); }
+  .seg button.active { background: var(--accent); color: #fff; }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.4; }
+  .actions { position: sticky; bottom: 0; background: var(--panel); padding-top: 12px; }
+  .btn {
+    width: 100%; padding: 11px; border: none; border-radius: 8px; background: var(--accent);
+    color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; margin-bottom: 8px;
+  }
+  .btn.secondary { background: #eef1f5; color: var(--text); }
+  .disabled { opacity: .45; pointer-events: none; }
+
+  /* ---------- Preview ---------- */
+  #stage {
+    flex: 1; padding: 40px; display: flex; align-items: flex-start; justify-content: center;
+    overflow: auto; height: 100vh;
+  }
+  #paper-wrap {
+    background: #fff; box-shadow: 0 4px 24px rgba(0,0,0,.12);
+  }
+  #info { position: fixed; bottom: 14px; right: 18px; font-size: 12px; color: var(--muted);
+    background: rgba(255,255,255,.9); padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); }
+
+  /* ---------- Print ---------- */
+  @media print {
+    html, body {
+      margin: 0 !important; padding: 0 !important;
+      min-height: 0 !important; background: #fff !important;
+      display: block !important; overflow: hidden !important;
+    }
+    #sidebar, #info { display: none !important; }
+    #stage {
+      padding: 0 !important; margin: 0 !important; height: auto !important;
+      display: block !important; overflow: visible !important;
+    }
+    #paper-wrap { box-shadow: none !important; margin: 0 !important; padding: 0 !important; }
+    /* pin the sheet to the page origin so it cannot push a phantom 2nd page */
+    #paper-wrap svg { display: block !important; position: absolute; top: 0; left: 0; }
+  }
+</style>
+</head>
+<body>
+  <aside id="sidebar">
+    <h1>Paper Grid Generator</h1>
+    <div class="sub">Exact-size printable grids · dots, squares, lines &amp; more</div>
+
+    <fieldset>
+      <legend>Paper</legend>
+      <label>Size</label>
+      <select id="paperSize">
+        <option value="A3">A3 — 297 × 420 mm</option>
+        <option value="A4" selected>A4 — 210 × 297 mm</option>
+        <option value="A5">A5 — 148 × 210 mm</option>
+        <option value="A6">A6 — 105 × 148 mm</option>
+        <option value="Letter">Letter — 216 × 279 mm</option>
+        <option value="Legal">Legal — 216 × 356 mm</option>
+        <option value="custom">Custom…</option>
+      </select>
+      <div class="row" id="customSizeRow" style="display:none; margin-top:8px;">
+        <div><label>Width (mm)</label><input type="number" id="customW" value="210" min="10" step="1"></div>
+        <div><label>Height (mm)</label><input type="number" id="customH" value="297" min="10" step="1"></div>
+      </div>
+      <label style="margin-top:10px;">Orientation</label>
+      <div class="seg" id="orientation">
+        <button data-v="portrait" class="active">Portrait</button>
+        <button data-v="landscape">Landscape</button>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Grid</legend>
+      <label>Type</label>
+      <select id="gridType">
+        <option value="dots" selected>Dot grid</option>
+        <option value="squares">Square grid</option>
+        <option value="lines">Ruled lines</option>
+        <option value="graph">Graph (major/minor)</option>
+        <option value="isometric">Isometric</option>
+        <option value="hex">Hexagonal</option>
+        <option value="cross">Cross / plus</option>
+        <option value="blank">Blank</option>
+      </select>
+
+      <label>Spacing (mm)</label>
+      <div class="row">
+        <div>
+          <select id="spacingPreset">
+            <option value="2.5" selected>2.5 mm</option>
+            <option value="3">3 mm</option>
+            <option value="4">4 mm</option>
+            <option value="5">5 mm</option>
+            <option value="7">7 mm (ruled)</option>
+            <option value="10">10 mm</option>
+            <option value="custom">Custom…</option>
+          </select>
+        </div>
+        <div><input type="number" id="spacing" value="2.5" min="0.5" step="0.5"></div>
+      </div>
+
+      <div id="majorRow">
+        <label>Major line every N cells</label>
+        <input type="number" id="majorEvery" value="4" min="0" step="1">
+        <div class="hint">0 = no major lines. (Graph &amp; square grids.)</div>
+      </div>
+
+      <label>Line weight (mm)</label>
+      <input type="number" id="weight" value="0.2" min="0.05" step="0.05">
+
+      <label>Dot size (mm)</label>
+      <input type="number" id="dotSize" value="0.5" min="0.1" step="0.1">
+
+      <label>Color</label>
+      <div class="row">
+        <div><input type="color" id="color" value="#9aa3b2"></div>
+        <div>
+          <select id="colorPreset">
+            <option value="#9aa3b2" selected>Light grey</option>
+            <option value="#c7ccd6">Faint grey</option>
+            <option value="#7ea6e0">Blue</option>
+            <option value="#000000">Black</option>
+            <option value="custom">Custom…</option>
+          </select>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Margins (mm)</legend>
+      <div class="checkbox-row">
+        <input type="checkbox" id="uniformMargin" checked>
+        <label for="uniformMargin">Uniform margin</label>
+      </div>
+      <div id="uniformMarginRow">
+        <label>All sides</label>
+        <input type="number" id="marginAll" value="10" min="0" step="1">
+      </div>
+      <div id="perSideMargin" style="display:none;">
+        <div class="row">
+          <div><label>Top</label><input type="number" id="mTop" value="10" min="0" step="1"></div>
+          <div><label>Right</label><input type="number" id="mRight" value="10" min="0" step="1"></div>
+        </div>
+        <div class="row">
+          <div><label>Bottom</label><input type="number" id="mBottom" value="10" min="0" step="1"></div>
+          <div><label>Left</label><input type="number" id="mLeft" value="10" min="0" step="1"></div>
+        </div>
+      </div>
+      <div class="checkbox-row">
+        <input type="checkbox" id="showMarginGuide">
+        <label for="showMarginGuide">Show margin outline</label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Cut tiles</legend>
+      <div class="hint" style="margin-top:0;">Print one sheet, then cut into smaller pages.</div>
+      <label>Subdivide into</label>
+      <select id="cutPreset">
+        <option value="none" selected>No cutting</option>
+        <option value="auto">Fit smaller size…</option>
+        <option value="2x2">2 × 2</option>
+        <option value="2x1">2 × 1 (halves)</option>
+        <option value="3x3">3 × 3</option>
+        <option value="custom">Custom grid…</option>
+      </select>
+      <div id="cutAutoRow" style="display:none;">
+        <label>Cut to size</label>
+        <select id="cutToSize">
+          <option value="A5">A5</option>
+          <option value="A6" selected>A6</option>
+          <option value="A7">A7</option>
+        </select>
+        <div class="hint" id="cutAutoInfo"></div>
+      </div>
+      <div id="cutCustomRow" class="row" style="display:none;">
+        <div><label>Cols</label><input type="number" id="cutCols" value="2" min="1" step="1"></div>
+        <div><label>Rows</label><input type="number" id="cutRows" value="2" min="1" step="1"></div>
+      </div>
+      <div class="checkbox-row">
+        <input type="checkbox" id="cropMarks" checked>
+        <label for="cropMarks">Corner crop marks</label>
+      </div>
+      <div class="checkbox-row">
+        <input type="checkbox" id="perTileMargin">
+        <label for="perTileMargin">Apply margins inside each tile</label>
+      </div>
+    </fieldset>
+
+    <div class="actions">
+      <button class="btn" id="printBtn">Print / Save as PDF</button>
+      <button class="btn secondary" id="downloadBtn">Download SVG</button>
+    </div>
+  </aside>
+
+  <main id="stage">
+    <div id="paper-wrap"></div>
+  </main>
+  <div id="info"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ----- paper dimensions in mm (portrait W x H) -----
+  const PAPER = {
+    A3: [297, 420], A4: [210, 297], A5: [148, 210], A6: [105, 148],
+    A7: [74, 105], Letter: [216, 279], Legal: [216, 356],
+  };
+
+  const $ = id => document.getElementById(id);
+  const els = {};
+  ["paperSize","customSizeRow","customW","customH","gridType","spacingPreset","spacing",
+   "majorRow","majorEvery","weight","dotSize","color","colorPreset","uniformMargin",
+   "uniformMarginRow","perSideMargin","marginAll","mTop","mRight","mBottom","mLeft",
+   "showMarginGuide","cutPreset","cutAutoRow","cutToSize","cutAutoInfo","cutCustomRow",
+   "cutCols","cutRows","cropMarks","perTileMargin","printBtn","downloadBtn"]
+    .forEach(id => els[id] = $(id));
+
+  let orientation = "portrait";
+
+  // ----- helpers -----
+  function getPaperDims() {
+    let w, h;
+    if (els.paperSize.value === "custom") {
+      w = Math.max(10, +els.customW.value || 210);
+      h = Math.max(10, +els.customH.value || 297);
+    } else {
+      [w, h] = PAPER[els.paperSize.value];
+    }
+    return orientation === "landscape" ? [Math.max(w,h), Math.min(w,h)] : [Math.min(w,h), Math.max(w,h)];
+  }
+
+  function getMargins() {
+    if (els.uniformMargin.checked) {
+      const m = +els.marginAll.value || 0;
+      return { t: m, r: m, b: m, l: m };
+    }
+    return {
+      t: +els.mTop.value || 0, r: +els.mRight.value || 0,
+      b: +els.mBottom.value || 0, l: +els.mLeft.value || 0,
+    };
+  }
+
+  function getCutGrid(paperW, paperH) {
+    const v = els.cutPreset.value;
+    if (v === "none") return { cols: 1, rows: 1 };
+    if (v === "2x2") return { cols: 2, rows: 2 };
+    if (v === "2x1") return { cols: 2, rows: 1 };
+    if (v === "3x3") return { cols: 3, rows: 3 };
+    if (v === "custom") return { cols: Math.max(1,+els.cutCols.value||1), rows: Math.max(1,+els.cutRows.value||1) };
+    if (v === "auto") {
+      const [tw, th] = PAPER[els.cutToSize.value];
+      // try both target orientations, pick the one that tiles best (most tiles, least waste)
+      const opts = [[tw, th], [th, tw]].map(([a, b]) => {
+        const c = Math.floor(paperW / a), r = Math.floor(paperH / b);
+        return { cols: Math.max(1, c), rows: Math.max(1, r), tw: a, th: b, n: Math.max(1,c) * Math.max(1,r) };
+      });
+      opts.sort((x, y) => y.n - x.n);
+      return opts[0];
+    }
+    return { cols: 1, rows: 1 };
+  }
+
+  // build an SVG pattern <defs> + fill rect for the grid inside a given region
+  function gridContent(type, x, y, w, h, opts) {
+    const { spacing, weight, dotSize, color, majorEvery } = opts;
+    const uid = "p" + Math.round(x * 100) + "_" + Math.round(y * 100);
+    const stroke = `stroke="${color}" stroke-width="${weight}"`;
+    let defs = "", body = "";
+
+    // clip so nothing spills past the region
+    const clipId = "clip" + uid;
+    defs += `<clipPath id="${clipId}"><rect x="${x}" y="${y}" width="${w}" height="${h}"/></clipPath>`;
+
+    const open = `<g clip-path="url(#${clipId})">`;
+    const close = `</g>`;
+
+    if (type === "blank") return "";
+
+    // NOTE: we deliberately emit explicit <circle>/<path> elements rather than an
+    // SVG <pattern> fill. Chrome's print/PDF pipeline rasterizes pattern-filled
+    // rects to a low-res bitmap (blocky dots); explicit shapes stay true vector.
+    const r2 = n => (Math.round(n * 1000) / 1000);
+
+    if (type === "dots") {
+      const r = dotSize / 2;
+      let dots = "";
+      for (let yy = y; yy <= y + h + 1e-6; yy += spacing)
+        for (let xx = x; xx <= x + w + 1e-6; xx += spacing)
+          dots += `<circle cx="${r2(xx)}" cy="${r2(yy)}" r="${r}"/>`;
+      return open + `<g fill="${color}" stroke="none">${dots}</g>` + close;
+    }
+
+    if (type === "cross") {
+      const a = Math.min(spacing * 0.3, 1.2);
+      let p = "";
+      for (let yy = y; yy <= y + h + 1e-6; yy += spacing)
+        for (let xx = x; xx <= x + w + 1e-6; xx += spacing)
+          p += `<path d="M ${r2(xx-a)} ${r2(yy)} H ${r2(xx+a)} M ${r2(xx)} ${r2(yy-a)} V ${r2(yy+a)}"/>`;
+      return open + `<g fill="none" stroke="${color}" stroke-width="${weight}">${p}</g>` + close;
+    }
+
+    if (type === "lines") {
+      let lines = "";
+      for (let yy = y + spacing; yy < y + h - 0.001; yy += spacing) {
+        lines += `<line x1="${x}" y1="${yy}" x2="${x+w}" y2="${yy}" ${stroke}/>`;
+      }
+      return open + lines + close;
+    }
+
+    if (type === "squares" || type === "graph") {
+      let minor = "", major = "";
+      const mw = (type === "graph" || (majorEvery > 0)) ? weight * 1.8 : weight;
+      let i = 0;
+      for (let xx = x; xx <= x + w + 0.001; xx += spacing, i++) {
+        const isMajor = majorEvery > 0 && i % majorEvery === 0;
+        const ln = `<line x1="${xx}" y1="${y}" x2="${xx}" y2="${y+h}" stroke="${color}" stroke-width="${isMajor?mw:weight}"/>`;
+        if (isMajor) major += ln; else minor += ln;
+      }
+      i = 0;
+      for (let yy = y; yy <= y + h + 0.001; yy += spacing, i++) {
+        const isMajor = majorEvery > 0 && i % majorEvery === 0;
+        const ln = `<line x1="${x}" y1="${yy}" x2="${x+w}" y2="${yy}" stroke="${color}" stroke-width="${isMajor?mw:weight}"/>`;
+        if (isMajor) major += ln; else minor += ln;
+      }
+      return open + minor + major + close;
+    }
+
+    if (type === "isometric") {
+      // vertical lines + two diagonal families at 30deg
+      let p = "";
+      const tan30 = Math.tan(Math.PI / 6);
+      const dx = spacing; // vertical line spacing
+      for (let xx = x; xx <= x + w + 0.001; xx += dx) {
+        p += `<line x1="${xx}" y1="${y}" x2="${xx}" y2="${y+h}" ${stroke}/>`;
+      }
+      // diagonals rising (/) and falling (\): step in y by spacing*... ; draw across full region
+      const step = spacing; // intercept spacing along x
+      // rising lines: slope = -tan30 (going up-right). y = -tan30*(X - x0)
+      for (let x0 = x - h / tan30; x0 <= x + w + h / tan30; x0 += step) {
+        p += `<line x1="${x0}" y1="${y+h}" x2="${x0 + h/tan30}" y2="${y}" ${stroke}/>`;
+        p += `<line x1="${x0}" y1="${y}" x2="${x0 + h/tan30}" y2="${y+h}" ${stroke}/>`;
+      }
+      return open + p + close;
+    }
+
+    if (type === "hex") {
+      // pointy-top hex grid; spacing ~ hex "size" (center to vertex)
+      const s = spacing;                 // radius
+      const hw = Math.sqrt(3) * s;        // hex width (flat-to-flat)
+      const vstep = 1.5 * s;              // vertical center step
+      let p = "";
+      function hexPath(cx, cy) {
+        let d = "";
+        for (let k = 0; k < 6; k++) {
+          const ang = Math.PI / 180 * (60 * k - 90);
+          const px = cx + s * Math.cos(ang), py = cy + s * Math.sin(ang);
+          d += (k === 0 ? "M" : "L") + px.toFixed(2) + " " + py.toFixed(2) + " ";
+        }
+        return `<path d="${d}Z" fill="none" ${stroke}/>`;
+      }
+      let row = 0;
+      for (let cy = y; cy <= y + h + s; cy += vstep, row++) {
+        const offset = (row % 2) ? hw / 2 : 0;
+        for (let cx = x + offset; cx <= x + w + hw; cx += hw) {
+          p += hexPath(cx, cy);
+        }
+      }
+      return open + p + close;
+    }
+
+    return "";
+  }
+
+  function render() {
+    const [W, H] = getPaperDims();
+    const m = getMargins();
+    const grid = getCutGrid(W, H);
+    const type = els.gridType.value;
+    const spacing = Math.max(0.5, +els.spacing.value || 2.5);
+    const weight = Math.max(0.02, +els.weight.value || 0.2);
+    const dotSize = Math.max(0.1, +els.dotSize.value || 0.5);
+    const color = els.color.value;
+    const majorEvery = Math.max(0, parseInt(els.majorEvery.value) || 0);
+    const showMargin = els.showMarginGuide.checked;
+    const crop = els.cropMarks.checked && (grid.cols > 1 || grid.rows > 1);
+    const perTile = els.perTileMargin.checked && (grid.cols > 1 || grid.rows > 1);
+
+    const tileW = W / grid.cols, tileH = H / grid.rows;
+    const gridOpts = { spacing, weight, dotSize, color, majorEvery };
+
+    let defs = "", content = "";
+
+    for (let c = 0; c < grid.cols; c++) {
+      for (let r = 0; r < grid.rows; r++) {
+        const tx = c * tileW, ty = r * tileH;
+        // grid region within this tile: full tile, or inset by margins if perTile
+        let gx, gy, gw, gh;
+        if (grid.cols > 1 || grid.rows > 1) {
+          if (perTile) {
+            gx = tx + m.l; gy = ty + m.t; gw = tileW - m.l - m.r; gh = tileH - m.t - m.b;
+          } else {
+            gx = tx; gy = ty; gw = tileW; gh = tileH;
+          }
+        } else {
+          gx = m.l; gy = m.t; gw = W - m.l - m.r; gh = H - m.t - m.b;
+        }
+        if (gw > 0 && gh > 0) {
+          const piece = gridContent(type, gx, gy, gw, gh, gridOpts);
+          content += piece;
+        }
+        if (perTile && showMargin && gw > 0 && gh > 0) {
+          content += `<rect x="${gx}" y="${gy}" width="${gw}" height="${gh}" fill="none" stroke="#d0d0d0" stroke-width="0.15" stroke-dasharray="1 1"/>`;
+        }
+      }
+    }
+
+    // single-sheet margin guide
+    if (showMargin && grid.cols === 1 && grid.rows === 1) {
+      const gw = W - m.l - m.r, gh = H - m.t - m.b;
+      content += `<rect x="${m.l}" y="${m.t}" width="${gw}" height="${gh}" fill="none" stroke="#d0d0d0" stroke-width="0.15" stroke-dasharray="1 1"/>`;
+    }
+
+    // cut lines + crop marks
+    if (grid.cols > 1 || grid.rows > 1) {
+      const cutStroke = `stroke="#cfd4dc" stroke-width="0.15"`;
+      if (!crop) {
+        for (let c = 1; c < grid.cols; c++)
+          content += `<line x1="${c*tileW}" y1="0" x2="${c*tileW}" y2="${H}" ${cutStroke} stroke-dasharray="2 2"/>`;
+        for (let r = 1; r < grid.rows; r++)
+          content += `<line x1="0" y1="${r*tileH}" x2="${W}" y2="${r*tileH}" ${cutStroke} stroke-dasharray="2 2"/>`;
+      } else {
+        const ml = 4; // crop mark length mm
+        const cs = `stroke="#333" stroke-width="0.2"`;
+        for (let c = 0; c <= grid.cols; c++) {
+          for (let r = 0; r <= grid.rows; r++) {
+            const px = c * tileW, py = r * tileH;
+            content += `<line x1="${px-ml}" y1="${py}" x2="${px-(px<=0.01?0:0)+ (px>=W-0.01? -ml: ml)}" y2="${py}" ${cs}/>`;
+          }
+        }
+        // simpler: draw a short tick on each axis at every interior cut boundary, both directions
+        content = content; // (ticks below)
+        let ticks = "";
+        const tl = 3.5;
+        for (let c = 0; c <= grid.cols; c++) {
+          const px = c * tileW;
+          ticks += `<line x1="${px}" y1="0" x2="${px}" y2="${tl}" ${cs}/>`;
+          ticks += `<line x1="${px}" y1="${H}" x2="${px}" y2="${H-tl}" ${cs}/>`;
+        }
+        for (let r = 0; r <= grid.rows; r++) {
+          const py = r * tileH;
+          ticks += `<line x1="0" y1="${py}" x2="${tl}" y2="${py}" ${cs}/>`;
+          ticks += `<line x1="${W}" y1="${py}" x2="${W-tl}" y2="${py}" ${cs}/>`;
+        }
+        content += ticks;
+      }
+    }
+
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}mm" height="${H}mm" viewBox="0 0 ${W} ${H}" shape-rendering="geometricPrecision" text-rendering="geometricPrecision">
+<defs>${defs}</defs>
+<rect x="0" y="0" width="${W}" height="${H}" fill="#ffffff"/>
+${content}
+</svg>`;
+
+    $("paper-wrap").innerHTML = svg;
+    // preview scaling: fit to stage height-ish
+    const svgEl = $("paper-wrap").querySelector("svg");
+    if (svgEl) {
+      const px = mm => mm * 96 / 25.4;
+      svgEl.style.width = px(W) + "px";
+      svgEl.style.height = px(H) + "px";
+      svgEl.style.display = "block";
+    }
+
+    // info + page size for print
+    let pageRule = document.getElementById("pageRule");
+    if (!pageRule) { pageRule = document.createElement("style"); pageRule.id = "pageRule"; document.head.appendChild(pageRule); }
+    pageRule.textContent = `@media print {
+      @page { size: ${W}mm ${H}mm; margin: 0; }
+      html, body { width: ${W}mm !important; height: ${H}mm !important; }
+      #paper-wrap svg { width: ${W}mm !important; height: ${H}mm !important; }
+    }`;
+
+    let info = `${W} × ${H} mm`;
+    if (grid.cols > 1 || grid.rows > 1) {
+      info += ` · ${grid.cols}×${grid.rows} tiles (${(tileW).toFixed(0)}×${(tileH).toFixed(0)} mm each)`;
+    }
+    $("info").textContent = info;
+
+    // auto cut info
+    if (els.cutPreset.value === "auto") {
+      const g = grid;
+      els.cutAutoInfo.textContent = `${g.cols}×${g.rows} = ${g.cols*g.rows} pieces of ~${els.cutToSize.value} per sheet.`;
+    }
+
+    window._lastSVG = svg;
+  }
+
+  // ----- wire up controls -----
+  function syncVisibility() {
+    els.customSizeRow.style.display = els.paperSize.value === "custom" ? "flex" : "none";
+    els.uniformMarginRow.style.display = els.uniformMargin.checked ? "block" : "none";
+    els.perSideMargin.style.display = els.uniformMargin.checked ? "none" : "block";
+    const t = els.gridType.value;
+    els.majorRow.style.display = (t === "squares" || t === "graph") ? "block" : "none";
+    const cv = els.cutPreset.value;
+    els.cutAutoRow.style.display = cv === "auto" ? "block" : "none";
+    els.cutCustomRow.style.display = cv === "custom" ? "flex" : "none";
+  }
+
+  // segmented orientation
+  document.querySelectorAll("#orientation button").forEach(b => {
+    b.addEventListener("click", () => {
+      document.querySelectorAll("#orientation button").forEach(x => x.classList.remove("active"));
+      b.classList.add("active");
+      orientation = b.dataset.v;
+      render();
+    });
+  });
+
+  els.spacingPreset.addEventListener("change", () => {
+    if (els.spacingPreset.value !== "custom") { els.spacing.value = els.spacingPreset.value; }
+    render();
+  });
+  els.spacing.addEventListener("input", () => { els.spacingPreset.value = "custom"; render(); });
+  els.colorPreset.addEventListener("change", () => {
+    if (els.colorPreset.value !== "custom") els.color.value = els.colorPreset.value;
+    render();
+  });
+  els.color.addEventListener("input", () => { els.colorPreset.value = "custom"; render(); });
+
+  // generic listeners
+  ["paperSize","customW","customH","gridType","majorEvery","weight","dotSize",
+   "uniformMargin","marginAll","mTop","mRight","mBottom","mLeft","showMarginGuide",
+   "cutPreset","cutToSize","cutCols","cutRows","cropMarks","perTileMargin"].forEach(id => {
+    const el = $(id);
+    const ev = (el.type === "checkbox" || el.tagName === "SELECT") ? "change" : "input";
+    el.addEventListener(ev, () => { syncVisibility(); render(); });
+  });
+
+  els.printBtn.addEventListener("click", () => window.print());
+  els.downloadBtn.addEventListener("click", () => {
+    const blob = new Blob([window._lastSVG], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const t = els.gridType.value, sp = els.spacing.value, sz = els.paperSize.value;
+    a.href = url; a.download = `grid_${sz}_${t}_${sp}mm.svg`;
+    a.click(); URL.revokeObjectURL(url);
+  });
+
+  syncVisibility();
+  render();
+})();
+</script>
+</body>
+</html>
