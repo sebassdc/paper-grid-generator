@@ -65,6 +65,7 @@
     color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; margin-bottom: 8px;
   }
   .btn.secondary { background: #eef1f5; color: var(--text); }
+  .btn.small { width: auto; padding: 8px 14px; margin-bottom: 0; font-size: 13px; flex: 0 0 auto; }
   .disabled { opacity: .45; pointer-events: none; }
 
   /* ---------- Preview ---------- */
@@ -142,6 +143,10 @@
       <div class="row">
         <div>
           <select id="spacingPreset">
+            <option value="0.5">0.5 mm</option>
+            <option value="1">1 mm</option>
+            <option value="1.5">1.5 mm</option>
+            <option value="2">2 mm</option>
             <option value="2.5" selected>2.5 mm</option>
             <option value="3">3 mm</option>
             <option value="4">4 mm</option>
@@ -151,7 +156,7 @@
             <option value="custom">Custom…</option>
           </select>
         </div>
-        <div><input type="number" id="spacing" value="2.5" min="0.5" step="0.5"></div>
+        <div><input type="number" id="spacing" value="2.5" min="0.1" step="0.1"></div>
       </div>
 
       <div id="majorRow">
@@ -254,6 +259,18 @@
       </select>
     </fieldset>
 
+    <fieldset>
+      <legend>Saved grids</legend>
+      <div class="hint" style="margin-top:0;">Your current settings are remembered automatically. Save named presets to switch between favourite grids.</div>
+      <label>Load a preset</label>
+      <select id="presetList"></select>
+      <div class="row" style="margin-top:8px;">
+        <input type="text" id="presetName" placeholder="Name this grid…">
+        <button class="btn small" id="savePresetBtn">Save</button>
+      </div>
+      <button class="btn secondary small" id="deletePresetBtn" style="margin-top:8px;">Delete selected preset</button>
+    </fieldset>
+
     <div class="actions">
       <button class="btn" id="printBtn">Print / Save as PDF</button>
       <button class="btn secondary" id="downloadBtn">Download SVG</button>
@@ -281,7 +298,8 @@
    "majorRow","majorEvery","weight","dotSize","color","colorPreset","uniformMargin",
    "uniformMarginRow","perSideMargin","marginAll","mTop","mRight","mBottom","mLeft",
    "showMarginGuide","cutPreset","cutAutoRow","cutToSize","cutAutoInfo","cutCustomRow",
-   "cutCols","cutRows","cropMarks","perTileMargin","guideDivision","printBtn","downloadBtn"]
+   "cutCols","cutRows","cropMarks","perTileMargin","guideDivision","printBtn","downloadBtn",
+   "presetList","presetName","savePresetBtn","deletePresetBtn"]
     .forEach(id => els[id] = $(id));
 
   let orientation = "portrait";
@@ -537,7 +555,7 @@
     const m = getMargins();
     const grid = getCutGrid(W, H);
     const type = els.gridType.value;
-    const spacing = Math.max(0.5, +els.spacing.value || 2.5);
+    const spacing = Math.max(0.1, +els.spacing.value || 2.5);
     const weight = Math.max(0.02, +els.weight.value || 0.2);
     const dotSize = Math.max(0.1, +els.dotSize.value || 0.5);
     const color = els.color.value;
@@ -663,6 +681,7 @@ ${content}
     }
 
     window._lastSVG = svg;
+    saveLast();
   }
 
   // ----- wire up controls -----
@@ -717,6 +736,101 @@ ${content}
     a.click(); URL.revokeObjectURL(url);
   });
 
+  // ----- settings persistence + named presets (localStorage) -----
+  const LS_LAST = "pgg:lastSettings";
+  const LS_PRESETS = "pgg:presets";
+  // every control whose value/checked state is part of a grid definition
+  const SETTING_FIELDS = ["paperSize","customW","customH","gridType","spacingPreset",
+    "spacing","majorEvery","weight","dotSize","color","colorPreset","marginAll",
+    "mTop","mRight","mBottom","mLeft","cutPreset","cutToSize","cutCols","cutRows",
+    "guideDivision"];
+  const SETTING_CHECKS = ["uniformMargin","showMarginGuide","cropMarks","perTileMargin"];
+
+  function getSettings() {
+    const s = { orientation };
+    SETTING_FIELDS.forEach(id => s[id] = els[id].value);
+    SETTING_CHECKS.forEach(id => s[id] = els[id].checked);
+    return s;
+  }
+  function applySettings(s) {
+    if (!s || typeof s !== "object") return;
+    SETTING_FIELDS.forEach(id => { if (s[id] !== undefined) els[id].value = s[id]; });
+    SETTING_CHECKS.forEach(id => { if (s[id] !== undefined) els[id].checked = !!s[id]; });
+    if (s.orientation === "portrait" || s.orientation === "landscape") {
+      orientation = s.orientation;
+      document.querySelectorAll("#orientation button").forEach(b =>
+        b.classList.toggle("active", b.dataset.v === orientation));
+    }
+    syncVisibility();
+  }
+
+  let _saveTimer = null;
+  function saveLast() {
+    // debounce so dragging a number field doesn't thrash localStorage
+    clearTimeout(_saveTimer);
+    _saveTimer = setTimeout(() => {
+      try { localStorage.setItem(LS_LAST, JSON.stringify(getSettings())); } catch (e) {}
+    }, 150);
+  }
+  function loadLast() {
+    try { return JSON.parse(localStorage.getItem(LS_LAST)); } catch (e) { return null; }
+  }
+  function getPresets() {
+    try { return JSON.parse(localStorage.getItem(LS_PRESETS)) || {}; } catch (e) { return {}; }
+  }
+  function setPresets(p) {
+    try { localStorage.setItem(LS_PRESETS, JSON.stringify(p)); } catch (e) {}
+  }
+  function refreshPresetList(selected) {
+    const p = getPresets();
+    const names = Object.keys(p).sort((a, b) => a.localeCompare(b));
+    els.presetList.innerHTML = "";
+    const def = document.createElement("option");
+    def.value = "";
+    def.textContent = names.length ? "— select a saved grid —" : "— no saved grids yet —";
+    els.presetList.appendChild(def);
+    names.forEach(n => {
+      const o = document.createElement("option");
+      o.value = n; o.textContent = n;
+      els.presetList.appendChild(o);
+    });
+    if (selected) els.presetList.value = selected;
+    els.deletePresetBtn.classList.toggle("disabled", !els.presetList.value);
+  }
+
+  els.savePresetBtn.addEventListener("click", () => {
+    const name = (els.presetName.value || "").trim();
+    if (!name) { els.presetName.focus(); return; }
+    const p = getPresets();
+    p[name] = getSettings();           // same name simply updates the preset
+    setPresets(p);
+    refreshPresetList(name);
+    els.presetName.value = "";
+    els.deletePresetBtn.classList.remove("disabled");
+  });
+  els.presetList.addEventListener("change", () => {
+    const name = els.presetList.value;
+    els.deletePresetBtn.classList.toggle("disabled", !name);
+    if (!name) return;
+    const p = getPresets();
+    if (p[name]) { applySettings(p[name]); render(); }
+  });
+  els.deletePresetBtn.addEventListener("click", () => {
+    const name = els.presetList.value;
+    if (!name) return;
+    const p = getPresets();
+    delete p[name];
+    setPresets(p);
+    refreshPresetList("");
+  });
+  // Enter in the name field saves
+  els.presetName.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); els.savePresetBtn.click(); }
+  });
+
+  // ----- init: restore last-used settings, populate presets, first render -----
+  applySettings(loadLast());
+  refreshPresetList();
   syncVisibility();
   render();
 })();
