@@ -242,6 +242,18 @@
       </div>
     </fieldset>
 
+    <fieldset>
+      <legend>Division guides</legend>
+      <div class="hint" style="margin-top:0;">Marks the centre &amp; thirds of every tile — handy for ruling a page in half. For dot grids the cell count is snapped (even / ×3) so the divisions land exactly on dots, shown as extra dots just outside the grid (1 dot = centre, 2 dots = a third). Other grids get faint edge ticks. Applied per tile (the whole sheet when not cutting).</div>
+      <label>Mark</label>
+      <select id="guideDivision">
+        <option value="none" selected>None</option>
+        <option value="center">Centre (halves)</option>
+        <option value="thirds">Thirds</option>
+        <option value="both">Centre + thirds</option>
+      </select>
+    </fieldset>
+
     <div class="actions">
       <button class="btn" id="printBtn">Print / Save as PDF</button>
       <button class="btn secondary" id="downloadBtn">Download SVG</button>
@@ -269,7 +281,7 @@
    "majorRow","majorEvery","weight","dotSize","color","colorPreset","uniformMargin",
    "uniformMarginRow","perSideMargin","marginAll","mTop","mRight","mBottom","mLeft",
    "showMarginGuide","cutPreset","cutAutoRow","cutToSize","cutAutoInfo","cutCustomRow",
-   "cutCols","cutRows","cropMarks","perTileMargin","printBtn","downloadBtn"]
+   "cutCols","cutRows","cropMarks","perTileMargin","guideDivision","printBtn","downloadBtn"]
     .forEach(id => els[id] = $(id));
 
   let orientation = "portrait";
@@ -428,6 +440,98 @@
     return "";
   }
 
+  const r3 = n => Math.round(n * 1000) / 1000;
+
+  // How many grid cells must a region have so divisions land exactly on a dot?
+  //   centre  -> even  (a dot at the midpoint)
+  //   thirds  -> /3    (dots at 1/3 and 2/3)
+  //   both    -> /6
+  function guideModulus(mode) {
+    const center = mode === "center" || mode === "both";
+    const thirds = mode === "thirds" || mode === "both";
+    return thirds ? (center ? 6 : 3) : 2;
+  }
+
+  // Dot grid that SNAPS its cell count so centre/third columns & rows fall on
+  // real dots, then adds protruding "marker" dots just outside the block:
+  //   centre -> 1 extra dot · thirds -> 2 extra dots with a 1-dot gap.
+  // Spacing is kept exact (the block is centred, leaving room for the markers).
+  // Returns null if the region is too small to snap — caller falls back to a
+  // plain dot grid.
+  function dotGridWithGuides(x, y, w, h, opts, mode) {
+    const { spacing, dotSize, color } = opts;
+    const r = dotSize / 2;
+    const center = mode === "center" || mode === "both";
+    const thirds = mode === "thirds" || mode === "both";
+    const mod = guideModulus(mode);
+
+    // marker dots sit just outside the grid, separated by ONE DOT WIDTH (a gap
+    // equal to the dot's diameter), so they read as a tight cluster — not as
+    // extra grid cells. step = centre-to-centre for that one-dot gap.
+    const step = 2 * dotSize;
+    const dist = kind => kind === "center" ? [step] : [step, 2 * step]; // [s,2s] => 1-dot gap
+
+    // reserve a border wide enough for the furthest marker + its radius
+    const pad = (thirds ? 2 * step : step) + dotSize;
+    const innerW = w - 2 * pad, innerH = h - 2 * pad;
+    if (innerW <= 0 || innerH <= 0) return null;
+
+    const nx = Math.floor(innerW / spacing / mod) * mod;
+    const ny = Math.floor(innerH / spacing / mod) * mod;
+    if (nx < mod || ny < mod) return null;
+
+    const blockW = nx * spacing, blockH = ny * spacing;
+    const x0 = x + (w - blockW) / 2;     // centred block (inset >= pad on each side)
+    const y0 = y + (h - blockH) / 2;
+    const left = x0, right = x0 + blockW, top = y0, bot = y0 + blockH;
+    const colX = i => x0 + i * spacing, rowY = j => y0 + j * spacing;
+
+    let dots = "";
+    for (let j = 0; j <= ny; j++)
+      for (let i = 0; i <= nx; i++)
+        dots += `<circle cx="${r3(colX(i))}" cy="${r3(rowY(j))}" r="${r}"/>`;
+
+    // marker dots protrude outward from the block edges, on the division line
+    const dot = (cx, cy) => `<circle cx="${r3(cx)}" cy="${r3(cy)}" r="${r}"/>`;
+    let marks = "";
+    const vMark = (i, kind) => dist(kind).forEach(o => {
+      marks += dot(colX(i), top - o) + dot(colX(i), bot + o);
+    });
+    const hMark = (j, kind) => dist(kind).forEach(o => {
+      marks += dot(left - o, rowY(j)) + dot(right + o, rowY(j));
+    });
+    if (thirds) { vMark(nx/3, "third"); vMark(2*nx/3, "third"); hMark(ny/3, "third"); hMark(2*ny/3, "third"); }
+    if (center) { vMark(nx/2, "center"); hMark(ny/2, "center"); }
+
+    return `<g fill="${color}" stroke="none">${dots}${marks}</g>`;
+  }
+
+  // faint centre / thirds tick marks at the edges of a region (non-dot grids)
+  function divisionGuides(x, y, w, h, mode) {
+    if (mode === "none") return "";
+    const tColor = "#c2c8d2";   // thirds — very light
+    const cColor = "#a7b3cb";   // centre — faint blue tint, a touch more present
+    const tw = 0.2;             // hairline so it stays subtle in print
+    // vertical division at xx: short inward ticks on top & bottom edges
+    const vTick = (xx, len, color) =>
+      `<line x1="${r3(xx)}" y1="${r3(y)}" x2="${r3(xx)}" y2="${r3(y+len)}" stroke="${color}" stroke-width="${tw}"/>` +
+      `<line x1="${r3(xx)}" y1="${r3(y+h)}" x2="${r3(xx)}" y2="${r3(y+h-len)}" stroke="${color}" stroke-width="${tw}"/>`;
+    // horizontal division at yy: short inward ticks on left & right edges
+    const hTick = (yy, len, color) =>
+      `<line x1="${r3(x)}" y1="${r3(yy)}" x2="${r3(x+len)}" y2="${r3(yy)}" stroke="${color}" stroke-width="${tw}"/>` +
+      `<line x1="${r3(x+w)}" y1="${r3(yy)}" x2="${r3(x+w-len)}" y2="${r3(yy)}" stroke="${color}" stroke-width="${tw}"/>`;
+    let s = "";
+    if (mode === "thirds" || mode === "both") {
+      s += vTick(x + w/3, 1.8, tColor) + vTick(x + 2*w/3, 1.8, tColor);
+      s += hTick(y + h/3, 1.8, tColor) + hTick(y + 2*h/3, 1.8, tColor);
+    }
+    if (mode === "center" || mode === "both") {
+      s += vTick(x + w/2, 2.8, cColor);
+      s += hTick(y + h/2, 2.8, cColor);
+    }
+    return s;
+  }
+
   function render() {
     const [W, H] = getPaperDims();
     const m = getMargins();
@@ -462,7 +566,16 @@
           gx = m.l; gy = m.t; gw = W - m.l - m.r; gh = H - m.t - m.b;
         }
         if (gw > 0 && gh > 0) {
-          const piece = gridContent(type, gx, gy, gw, gh, gridOpts);
+          const gmode = els.guideDivision.value;
+          let piece = null;
+          if (gmode !== "none" && type === "dots") {
+            // snap the dot grid so centre/thirds land on real dots + add markers
+            piece = dotGridWithGuides(gx, gy, gw, gh, gridOpts, gmode);
+          }
+          if (piece === null) {
+            piece = gridContent(type, gx, gy, gw, gh, gridOpts);
+            if (gmode !== "none") piece += divisionGuides(gx, gy, gw, gh, gmode);
+          }
           content += piece;
         }
         if (perTile && showMargin && gw > 0 && gh > 0) {
@@ -588,7 +701,7 @@ ${content}
   // generic listeners
   ["paperSize","customW","customH","gridType","majorEvery","weight","dotSize",
    "uniformMargin","marginAll","mTop","mRight","mBottom","mLeft","showMarginGuide",
-   "cutPreset","cutToSize","cutCols","cutRows","cropMarks","perTileMargin"].forEach(id => {
+   "cutPreset","cutToSize","cutCols","cutRows","cropMarks","perTileMargin","guideDivision"].forEach(id => {
     const el = $(id);
     const ev = (el.type === "checkbox" || el.tagName === "SELECT") ? "change" : "input";
     el.addEventListener(ev, () => { syncVisibility(); render(); });
