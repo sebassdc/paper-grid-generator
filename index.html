@@ -110,6 +110,7 @@
         <option value="A4" selected>A4 — 210 × 297 mm</option>
         <option value="A5">A5 — 148 × 210 mm</option>
         <option value="A6">A6 — 105 × 148 mm</option>
+        <option value="A7">A7 — 74 × 105 mm</option>
         <option value="Letter">Letter — 216 × 279 mm</option>
         <option value="Legal">Legal — 216 × 356 mm</option>
         <option value="custom">Custom…</option>
@@ -260,6 +261,19 @@
     </fieldset>
 
     <fieldset>
+      <legend>Print accuracy</legend>
+      <div class="hint" style="margin-top:0;">Keep the browser print dialog at Scale 100% and Margins None. If your printer still shrinks or stretches the output, print with the 100 mm calibration rulers, measure them, then adjust these corrections. Example: if a 100 mm ruler prints as 99 mm, use 101.01%.</div>
+      <div class="row">
+        <div><label>X correction (%)</label><input type="number" id="scaleX" value="100" min="90" max="110" step="0.01"></div>
+        <div><label>Y correction (%)</label><input type="number" id="scaleY" value="100" min="90" max="110" step="0.01"></div>
+      </div>
+      <div class="checkbox-row">
+        <input type="checkbox" id="showCalibration">
+        <label for="showCalibration">Show 100 mm calibration rulers</label>
+      </div>
+    </fieldset>
+
+    <fieldset>
       <legend>Saved grids</legend>
       <div class="hint" style="margin-top:0;">Your current settings are remembered automatically. Save named presets to switch between favourite grids.</div>
       <label>Load a preset</label>
@@ -298,7 +312,8 @@
    "majorRow","majorEvery","weight","dotSize","color","colorPreset","uniformMargin",
    "uniformMarginRow","perSideMargin","marginAll","mTop","mRight","mBottom","mLeft",
    "showMarginGuide","cutPreset","cutAutoRow","cutToSize","cutAutoInfo","cutCustomRow",
-   "cutCols","cutRows","cropMarks","perTileMargin","guideDivision","printBtn","downloadBtn",
+   "cutCols","cutRows","cropMarks","perTileMargin","guideDivision","scaleX","scaleY",
+   "showCalibration","printBtn","downloadBtn",
    "presetList","presetName","savePresetBtn","deletePresetBtn"]
     .forEach(id => els[id] = $(id));
 
@@ -460,6 +475,44 @@
 
   const r3 = n => Math.round(n * 1000) / 1000;
 
+  function clamp(n, min, max) {
+    return Math.min(max, Math.max(min, n));
+  }
+
+  function pctToScale(value) {
+    return clamp((+value || 100) / 100, 0.9, 1.1);
+  }
+
+  function calibrationRulers(W, H) {
+    const len = Math.min(100, Math.max(20, W - 30));
+    const x = 15;
+    const y = H - 15;
+    const vLen = Math.min(100, Math.max(20, H - 30));
+    let s = `<g fill="none" stroke="#111" stroke-width="0.18" font-family="Arial, sans-serif" font-size="3" text-rendering="geometricPrecision">`;
+    s += `<line x1="${x}" y1="${y}" x2="${x+len}" y2="${y}"/>`;
+    for (let i = 0; i <= len; i += 10) {
+      const h = (i % 50 === 0) ? 4 : 2.4;
+      s += `<line x1="${x+i}" y1="${y-h}" x2="${x+i}" y2="${y+h}"/>`;
+    }
+    s += `<text x="${x}" y="${y-6}" fill="#111" stroke="none">${len} mm horizontal calibration</text>`;
+    s += `<line x1="${x}" y1="${y}" x2="${x}" y2="${y-vLen}"/>`;
+    for (let i = 0; i <= vLen; i += 10) {
+      const w = (i % 50 === 0) ? 4 : 2.4;
+      s += `<line x1="${x-w}" y1="${y-i}" x2="${x+w}" y2="${y-i}"/>`;
+    }
+    s += `<text x="${x+6}" y="${y-vLen}" fill="#111" stroke="none" transform="rotate(-90 ${x+6} ${y-vLen})">${vLen} mm vertical calibration</text>`;
+    return s + `</g>`;
+  }
+
+  function scaledContent(content, W, H, scaleX, scaleY) {
+    const r5 = n => Math.round(n * 100000) / 100000;
+    const sx = r5(scaleX), sy = r5(scaleY);
+    if (Math.abs(scaleX - 1) < 0.00001 && Math.abs(scaleY - 1) < 0.00001) return content;
+    // Scale about the physical centre of the page so compensation keeps the
+    // generated sheet visually centred on A4 while correcting real dimensions.
+    return `<g transform="translate(${r3(W/2)} ${r3(H/2)}) scale(${sx} ${sy}) translate(${-r3(W/2)} ${-r3(H/2)})">${content}</g>`;
+  }
+
   // How many grid cells must a region have so divisions land exactly on a dot?
   //   centre  -> even  (a dot at the midpoint)
   //   thirds  -> /3    (dots at 1/3 and 2/3)
@@ -563,6 +616,8 @@
     const showMargin = els.showMarginGuide.checked;
     const crop = els.cropMarks.checked && (grid.cols > 1 || grid.rows > 1);
     const perTile = els.perTileMargin.checked && (grid.cols > 1 || grid.rows > 1);
+    const printScaleX = pctToScale(els.scaleX.value);
+    const printScaleY = pctToScale(els.scaleY.value);
 
     const tileW = W / grid.cols, tileH = H / grid.rows;
     const gridOpts = { spacing, weight, dotSize, color, majorEvery };
@@ -643,10 +698,16 @@
       }
     }
 
+    if (els.showCalibration.checked) {
+      content += calibrationRulers(W, H);
+    }
+
+    const printContent = scaledContent(content, W, H, printScaleX, printScaleY);
+
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}mm" height="${H}mm" viewBox="0 0 ${W} ${H}" shape-rendering="geometricPrecision" text-rendering="geometricPrecision">
 <defs>${defs}</defs>
 <rect x="0" y="0" width="${W}" height="${H}" fill="#ffffff"/>
-${content}
+${printContent}
 </svg>`;
 
     $("paper-wrap").innerHTML = svg;
@@ -670,7 +731,12 @@ ${content}
 
     let info = `${W} × ${H} mm`;
     if (grid.cols > 1 || grid.rows > 1) {
-      info += ` · ${grid.cols}×${grid.rows} tiles (${(tileW).toFixed(0)}×${(tileH).toFixed(0)} mm each)`;
+      info += ` · ${grid.cols}×${grid.rows} tiles (${r3(tileW)}×${r3(tileH)} mm each)`;
+    } else {
+      info += ` · grid area ${r3(W - m.l - m.r)}×${r3(H - m.t - m.b)} mm`;
+    }
+    if (printScaleX !== 1 || printScaleY !== 1) {
+      info += ` · correction ${r3(printScaleX * 100)}%×${r3(printScaleY * 100)}%`;
     }
     $("info").textContent = info;
 
@@ -720,7 +786,8 @@ ${content}
   // generic listeners
   ["paperSize","customW","customH","gridType","majorEvery","weight","dotSize",
    "uniformMargin","marginAll","mTop","mRight","mBottom","mLeft","showMarginGuide",
-   "cutPreset","cutToSize","cutCols","cutRows","cropMarks","perTileMargin","guideDivision"].forEach(id => {
+   "cutPreset","cutToSize","cutCols","cutRows","cropMarks","perTileMargin","guideDivision",
+   "scaleX","scaleY","showCalibration"].forEach(id => {
     const el = $(id);
     const ev = (el.type === "checkbox" || el.tagName === "SELECT") ? "change" : "input";
     el.addEventListener(ev, () => { syncVisibility(); render(); });
@@ -743,8 +810,8 @@ ${content}
   const SETTING_FIELDS = ["paperSize","customW","customH","gridType","spacingPreset",
     "spacing","majorEvery","weight","dotSize","color","colorPreset","marginAll",
     "mTop","mRight","mBottom","mLeft","cutPreset","cutToSize","cutCols","cutRows",
-    "guideDivision"];
-  const SETTING_CHECKS = ["uniformMargin","showMarginGuide","cropMarks","perTileMargin"];
+    "guideDivision","scaleX","scaleY"];
+  const SETTING_CHECKS = ["uniformMargin","showMarginGuide","cropMarks","perTileMargin","showCalibration"];
 
   function getSettings() {
     const s = { orientation };
