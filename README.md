@@ -25,6 +25,10 @@ When printing, for accurate physical sizes:
 
 > The browser's on-screen *print preview* downsamples fine grids and can look noisy — the actual printed page and saved PDF are sharp vector.
 
+## Deployment
+
+Hosted as a static site on Dokku behind Cloudflare. See [DEPLOY.md](DEPLOY.md) for the full setup and deploy steps.
+
 ## License
 
 MIT
