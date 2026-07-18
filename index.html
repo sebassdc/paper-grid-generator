@@ -137,9 +137,11 @@
         <option value="isometric">Isometric</option>
         <option value="hex">Hexagonal</option>
         <option value="cross">Cross / plus</option>
+        <option value="calligraphy">Calligraphy guides</option>
         <option value="blank">Blank</option>
       </select>
 
+      <div id="spacingRow">
       <label>Spacing (mm)</label>
       <div class="row">
         <div>
@@ -159,6 +161,7 @@
         </div>
         <div><input type="number" id="spacing" value="2.5" min="0.1" step="0.1"></div>
       </div>
+      </div>
 
       <div id="majorRow">
         <label>Major line every N cells</label>
@@ -169,8 +172,10 @@
       <label>Line weight (mm)</label>
       <input type="number" id="weight" value="0.2" min="0.05" step="0.05">
 
+      <div id="dotRow">
       <label>Dot size (mm)</label>
       <input type="number" id="dotSize" value="0.5" min="0.1" step="0.1">
+      </div>
 
       <label>Color</label>
       <div class="row">
@@ -185,6 +190,56 @@
           </select>
         </div>
       </div>
+    </fieldset>
+
+    <fieldset id="calligFieldset" style="display:none;">
+      <legend>Calligraphy</legend>
+      <label>Script preset</label>
+      <select id="calligPreset">
+        <option value="copperplate" selected>Copperplate — 2:1:2 · 55°</option>
+        <option value="copperplate323">Copperplate — 3:2:3 · 55°</option>
+        <option value="spencerian">Spencerian — 3:2:3 · 52°</option>
+        <option value="italic">Italic — 0.6:1:0.6 · 85°</option>
+        <option value="foundational">Foundational — 0.75:1:0.75 · no slant</option>
+        <option value="blackletter">Blackletter — 0.4:1:0.4 · no slant</option>
+        <option value="brush">Modern brush — 1:1:1 · 60°</option>
+        <option value="custom">Custom…</option>
+      </select>
+
+      <label>x-height (mm)</label>
+      <input type="number" id="xHeight" value="5" min="1" step="0.5">
+
+      <div class="row">
+        <div><label>Ascender ×</label><input type="number" id="ascRatio" value="2" min="0" step="0.05"></div>
+        <div><label>Descender ×</label><input type="number" id="descRatio" value="2" min="0" step="0.05"></div>
+      </div>
+      <div class="hint">Multiples of the x-height. E.g. 2 &amp; 2 with a 5 mm x-height gives the classic 2:1:2 Copperplate proportions (10 / 5 / 10 mm).</div>
+
+      <label>Gap between rows (mm)</label>
+      <input type="number" id="interlineGap" value="5" min="0" step="0.5">
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="slantOn" checked>
+        <label for="slantOn">Slant lines</label>
+      </div>
+      <div class="row" id="slantRow">
+        <div><label>Angle (° from baseline)</label><input type="number" id="slantAngle" value="55" min="30" max="90" step="0.5"></div>
+        <div><label>Spacing (mm)</label><input type="number" id="slantSpacing" value="10" min="2" step="0.5"></div>
+      </div>
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="showMidline">
+        <label for="showMidline">x-height midline (dotted)</label>
+      </div>
+      <div class="checkbox-row">
+        <input type="checkbox" id="splitAscDesc" checked>
+        <label for="splitAscDesc">Halfway asc/desc lines</label>
+      </div>
+      <div class="checkbox-row">
+        <input type="checkbox" id="showConfigLabel" checked>
+        <label for="showConfigLabel">Print settings label on page</label>
+      </div>
+      <div class="hint">Rows: dashed ascender line, solid waistline, heavier baseline, dashed descender line. "Halfway" adds the 1st ascender/descender lines (dotted) midway through those spaces — standard on Copperplate sheets. Slant angle is measured from the baseline (Copperplate 55°, vertical = 90°).</div>
     </fieldset>
 
     <fieldset>
@@ -309,6 +364,8 @@
   const $ = id => document.getElementById(id);
   const els = {};
   ["paperSize","customSizeRow","customW","customH","gridType","spacingPreset","spacing",
+   "spacingRow","dotRow","calligFieldset","calligPreset","xHeight","ascRatio","descRatio",
+   "interlineGap","slantOn","slantRow","slantAngle","slantSpacing","showMidline","splitAscDesc","showConfigLabel",
    "majorRow","majorEvery","weight","dotSize","color","colorPreset","uniformMargin",
    "uniformMarginRow","perSideMargin","marginAll","mTop","mRight","mBottom","mLeft",
    "showMarginGuide","cutPreset","cutAutoRow","cutToSize","cutAutoInfo","cutCustomRow",
@@ -318,6 +375,19 @@
     .forEach(id => els[id] = $(id));
 
   let orientation = "portrait";
+
+  // ----- calligraphy script presets -----
+  // ascRatio/descRatio are multiples of the x-height; slantAngle is measured
+  // from the baseline (Copperplate 55°, vertical = 90°).
+  const CALLIG_PRESETS = {
+    copperplate:    { xHeight: 5,  ascRatio: 2,    descRatio: 2,    slant: true,  slantAngle: 55, slantSpacing: 10, split: true },
+    copperplate323: { xHeight: 5,  ascRatio: 1.5,  descRatio: 1.5,  slant: true,  slantAngle: 55, slantSpacing: 10, split: true },
+    spencerian:     { xHeight: 5,  ascRatio: 1.5,  descRatio: 1.5,  slant: true,  slantAngle: 52, slantSpacing: 10, split: true },
+    italic:         { xHeight: 5,  ascRatio: 0.6,  descRatio: 0.6,  slant: true,  slantAngle: 85, slantSpacing: 12, split: false },
+    foundational:   { xHeight: 6,  ascRatio: 0.75, descRatio: 0.75, slant: false, slantAngle: 90, slantSpacing: 12, split: false },
+    blackletter:    { xHeight: 6,  ascRatio: 0.4,  descRatio: 0.4,  slant: false, slantAngle: 90, slantSpacing: 12, split: false },
+    brush:          { xHeight: 10, ascRatio: 1,    descRatio: 1,    slant: true,  slantAngle: 60, slantSpacing: 15, split: false },
+  };
 
   // ----- helpers -----
   function getPaperDims() {
@@ -443,6 +513,41 @@
         p += `<line x1="${x0}" y1="${y}" x2="${x0 + h/tan30}" y2="${y+h}" ${stroke}/>`;
       }
       return open + p + close;
+    }
+
+    if (type === "calligraphy") {
+      const cg = opts.callig;
+      const xh = cg.xHeight;
+      const asc = cg.ascRatio * xh, desc = cg.descRatio * xh;
+      const rowH = asc + xh + desc;
+      let s = "";
+      const line = (yy, wgt, dash) =>
+        `<line x1="${r2(x)}" y1="${r2(yy)}" x2="${r2(x+w)}" y2="${r2(yy)}" stroke="${color}" stroke-width="${wgt}"${dash ? ` stroke-dasharray="${dash}"` : ""}/>`;
+      for (let top = y; top + rowH <= y + h + 1e-6; top += rowH + cg.gap) {
+        const ascY = top, waistY = top + asc, baseY = waistY + xh, descY = baseY + desc;
+        // slant lines lean right: bottom anchored on the descender line, top
+        // shifted right by rowH / tan(angle). Clipped to the band.
+        if (cg.slant) {
+          const dx = rowH / Math.tan(cg.slantAngle * Math.PI / 180);
+          let sl = "";
+          for (let bx = x - dx; bx <= x + w + 1e-6; bx += cg.slantSpacing) {
+            sl += `<line x1="${r2(bx)}" y1="${r2(descY)}" x2="${r2(bx + dx)}" y2="${r2(ascY)}"/>`;
+          }
+          const bandClip = "cband" + uid + Math.round(top * 100);
+          defs += `<clipPath id="${bandClip}"><rect x="${r2(x)}" y="${r2(ascY)}" width="${r2(w)}" height="${r2(rowH)}"/></clipPath>`;
+          s += `<g clip-path="url(#${bandClip})" stroke="${color}" stroke-width="${weight * 0.6}" opacity="0.6">${sl}</g>`;
+        }
+        if (asc > 0)  s += line(ascY, weight, "1.4 1");     // 2nd ascender — dashed
+        if (cg.split && asc > 0)                             // 1st ascender — dotted
+          s += line(ascY + asc / 2, weight * 0.7, "0.4 0.8");
+        s += line(waistY, weight);                           // waistline — solid
+        if (cg.midline) s += line(waistY + xh / 2, weight * 0.7, "0.4 0.8");
+        s += line(baseY, weight * 1.8);                      // baseline — heavier
+        if (cg.split && desc > 0)                            // 1st descender — dotted
+          s += line(baseY + desc / 2, weight * 0.7, "0.4 0.8");
+        if (desc > 0) s += line(descY, weight, "1.4 1");     // 2nd descender — dashed
+      }
+      return `<defs>${defs}</defs>` + open + s + close;
     }
 
     if (type === "hex") {
@@ -620,7 +725,30 @@
     const printScaleY = pctToScale(els.scaleY.value);
 
     const tileW = W / grid.cols, tileH = H / grid.rows;
-    const gridOpts = { spacing, weight, dotSize, color, majorEvery };
+    const callig = {
+      xHeight: Math.max(1, +els.xHeight.value || 5),
+      ascRatio: Math.max(0, +els.ascRatio.value || 0),
+      descRatio: Math.max(0, +els.descRatio.value || 0),
+      gap: Math.max(0, +els.interlineGap.value || 0),
+      slant: els.slantOn.checked,
+      slantAngle: clamp(+els.slantAngle.value || 55, 30, 90),
+      slantSpacing: Math.max(2, +els.slantSpacing.value || 10),
+      midline: els.showMidline.checked,
+      split: els.splitAscDesc.checked,
+    };
+    const gridOpts = { spacing, weight, dotSize, color, majorEvery, callig };
+
+    // one-line description of the calligraphy setup, printed on the sheet so
+    // the settings survive with the paper copy
+    let calligLabel = "";
+    if (type === "calligraphy" && els.showConfigLabel.checked) {
+      const pv = els.calligPreset.value;
+      const pname = pv === "custom" ? "Custom"
+        : els.calligPreset.selectedOptions[0].textContent.split("—")[0].trim();
+      calligLabel = `${pname} · x-height ${callig.xHeight} mm · asc ${callig.ascRatio}× / desc ${callig.descRatio}×`;
+      if (callig.slant) calligLabel += ` · slant ${callig.slantAngle}° @ ${callig.slantSpacing} mm`;
+      calligLabel += ` · row gap ${callig.gap} mm`;
+    }
 
     let defs = "", content = "";
 
@@ -650,6 +778,14 @@
             if (gmode !== "none") piece += divisionGuides(gx, gy, gw, gh, gmode);
           }
           content += piece;
+          if (calligLabel) {
+            // put the label in the space below the grid region (bottom margin)
+            // when there's room, otherwise tuck it just inside the region
+            const tileBottom = (grid.cols > 1 || grid.rows > 1) ? ty + tileH : H;
+            const below = gy + gh;
+            const ly = (tileBottom - below >= 4) ? below + 3 : below - 1.5;
+            content += `<text x="${r3(gx + 1)}" y="${r3(ly)}" font-family="Arial, sans-serif" font-size="2.4" fill="#a2a9b5">${calligLabel}</text>`;
+          }
         }
         if (perTile && showMargin && gw > 0 && gh > 0) {
           content += `<rect x="${gx}" y="${gy}" width="${gw}" height="${gh}" fill="none" stroke="#d0d0d0" stroke-width="0.15" stroke-dasharray="1 1"/>`;
@@ -757,6 +893,10 @@ ${printContent}
     els.perSideMargin.style.display = els.uniformMargin.checked ? "none" : "block";
     const t = els.gridType.value;
     els.majorRow.style.display = (t === "squares" || t === "graph") ? "block" : "none";
+    els.calligFieldset.style.display = t === "calligraphy" ? "block" : "none";
+    els.spacingRow.style.display = t === "calligraphy" ? "none" : "block";
+    els.dotRow.style.display = t === "calligraphy" ? "none" : "block";
+    els.slantRow.style.display = els.slantOn.checked ? "flex" : "none";
     const cv = els.cutPreset.value;
     els.cutAutoRow.style.display = cv === "auto" ? "block" : "none";
     els.cutCustomRow.style.display = cv === "custom" ? "flex" : "none";
@@ -783,8 +923,33 @@ ${printContent}
   });
   els.color.addEventListener("input", () => { els.colorPreset.value = "custom"; render(); });
 
+  // calligraphy: preset fills the fields; editing a field flips to custom
+  els.calligPreset.addEventListener("change", () => {
+    const p = CALLIG_PRESETS[els.calligPreset.value];
+    if (p) {
+      els.xHeight.value = p.xHeight;
+      els.ascRatio.value = p.ascRatio;
+      els.descRatio.value = p.descRatio;
+      els.slantOn.checked = p.slant;
+      els.slantAngle.value = p.slantAngle;
+      els.slantSpacing.value = p.slantSpacing;
+      els.splitAscDesc.checked = p.split;
+    }
+    syncVisibility(); render();
+  });
+  ["xHeight","ascRatio","descRatio","slantAngle","slantSpacing"].forEach(id => {
+    els[id].addEventListener("input", () => { els.calligPreset.value = "custom"; render(); });
+  });
+  els.slantOn.addEventListener("change", () => {
+    els.calligPreset.value = "custom"; syncVisibility(); render();
+  });
+  els.splitAscDesc.addEventListener("change", () => {
+    els.calligPreset.value = "custom"; render();
+  });
+
   // generic listeners
   ["paperSize","customW","customH","gridType","majorEvery","weight","dotSize",
+   "interlineGap","showMidline","showConfigLabel",
    "uniformMargin","marginAll","mTop","mRight","mBottom","mLeft","showMarginGuide",
    "cutPreset","cutToSize","cutCols","cutRows","cropMarks","perTileMargin","guideDivision",
    "scaleX","scaleY","showCalibration"].forEach(id => {
@@ -798,7 +963,8 @@ ${printContent}
     const blob = new Blob([window._lastSVG], { type: "image/svg+xml" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    const t = els.gridType.value, sp = els.spacing.value, sz = els.paperSize.value;
+    const t = els.gridType.value, sz = els.paperSize.value;
+    const sp = t === "calligraphy" ? `x${els.xHeight.value}` : els.spacing.value;
     a.href = url; a.download = `grid_${sz}_${t}_${sp}mm.svg`;
     a.click(); URL.revokeObjectURL(url);
   });
@@ -810,8 +976,10 @@ ${printContent}
   const SETTING_FIELDS = ["paperSize","customW","customH","gridType","spacingPreset",
     "spacing","majorEvery","weight","dotSize","color","colorPreset","marginAll",
     "mTop","mRight","mBottom","mLeft","cutPreset","cutToSize","cutCols","cutRows",
-    "guideDivision","scaleX","scaleY"];
-  const SETTING_CHECKS = ["uniformMargin","showMarginGuide","cropMarks","perTileMargin","showCalibration"];
+    "guideDivision","scaleX","scaleY",
+    "calligPreset","xHeight","ascRatio","descRatio","interlineGap","slantAngle","slantSpacing"];
+  const SETTING_CHECKS = ["uniformMargin","showMarginGuide","cropMarks","perTileMargin","showCalibration",
+    "slantOn","showMidline","splitAscDesc","showConfigLabel"];
 
   function getSettings() {
     const s = { orientation };
