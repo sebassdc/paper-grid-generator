@@ -78,6 +78,7 @@
   }
   #info { position: fixed; bottom: 14px; right: 18px; font-size: 12px; color: var(--muted);
     background: rgba(255,255,255,.9); padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); }
+  #print-pages { display: none; }
 
   /* ---------- Print ---------- */
   @media print {
@@ -94,6 +95,17 @@
     #paper-wrap { box-shadow: none !important; margin: 0 !important; padding: 0 !important; }
     /* pin the sheet to the page origin so it cannot push a phantom 2nd page */
     #paper-wrap svg { display: block !important; position: absolute; top: 0; left: 0; }
+
+    /* ---- multi-page numbered printing ---- */
+    /* release the single-page height/overflow lock so N pages can flow */
+    html.printing-multi, body.printing-multi {
+      width: auto !important; height: auto !important; overflow: visible !important;
+    }
+    body.printing-multi #paper-wrap { display: none !important; }
+    body.printing-multi #print-pages { display: block !important; }
+    body.printing-multi .print-page { break-after: page; page-break-after: always; }
+    body.printing-multi .print-page:last-child { break-after: auto; page-break-after: auto; }
+    body.printing-multi .print-page svg { display: block; position: static; }
   }
 </style>
 </head>
@@ -316,6 +328,17 @@
     </fieldset>
 
     <fieldset>
+      <legend>Pages</legend>
+      <label>Pages to print</label>
+      <input type="number" id="pageCount" value="1" min="1" step="1">
+      <div class="checkbox-row" style="margin-top:8px;">
+        <input type="checkbox" id="numberPages">
+        <label for="numberPages">Number the pages</label>
+      </div>
+      <div class="hint">Prints this many copies of the grid. When numbering is on, each printed page gets its number centred at the bottom. The on-screen preview always shows a single sheet (page 1).</div>
+    </fieldset>
+
+    <fieldset>
       <legend>Print accuracy</legend>
       <div class="hint" style="margin-top:0;">Keep the browser print dialog at Scale 100% and Margins None. If your printer still shrinks or stretches the output, print with the 100 mm calibration rulers, measure them, then adjust these corrections. Example: if a 100 mm ruler prints as 99 mm, use 101.01%.</div>
       <div class="row">
@@ -350,6 +373,7 @@
     <div id="paper-wrap"></div>
   </main>
   <div id="info"></div>
+  <div id="print-pages"></div>
 
 <script>
 (function () {
@@ -370,7 +394,7 @@
    "uniformMarginRow","perSideMargin","marginAll","mTop","mRight","mBottom","mLeft",
    "showMarginGuide","cutPreset","cutAutoRow","cutToSize","cutAutoInfo","cutCustomRow",
    "cutCols","cutRows","cropMarks","perTileMargin","guideDivision","scaleX","scaleY",
-   "showCalibration","printBtn","downloadBtn",
+   "showCalibration","pageCount","numberPages","printBtn","downloadBtn",
    "presetList","presetName","savePresetBtn","deletePresetBtn"]
     .forEach(id => els[id] = $(id));
 
@@ -609,6 +633,30 @@
     return s + `</g>`;
   }
 
+  // Page number centred at the bottom of the sheet, in the grid colour.
+  // `fs` (glyph height, mm) is derived from the grid spacing so the number
+  // reads as part of the grid rather than looming over it.
+  // Coordinates are in mm (the SVG viewBox is in mm). Kept ~8 mm off the edge
+  // so printers with a hardware margin don't clip it. A white knock-out patch
+  // sized to the digits is painted behind the text so the number never sits on
+  // top of the grid — whatever the paper size, margins or spacing leave beneath
+  // it (e.g. on A5 the last dot row lands exactly where the number goes).
+  function pageNumberLabel(n, W, H, color, fs) {
+    const baseline = H - 8;             // baseline, 8 mm clear of the bottom edge
+    const label = String(n);
+    const charW = fs * 0.62;            // approx digit advance
+    const ascent = fs * 0.75;           // glyph top above the baseline
+    const padX = fs * 0.6, padTop = fs * 0.4, padBot = fs * 0.3;
+    const boxW = label.length * charW + padX * 2;
+    const boxH = ascent + padTop + padBot;
+    const boxX = W / 2 - boxW / 2;
+    const boxY = baseline - ascent - padTop;
+    return `<g>`
+      + `<rect x="${r3(boxX)}" y="${r3(boxY)}" width="${r3(boxW)}" height="${r3(boxH)}" fill="#ffffff"/>`
+      + `<text x="${r3(W/2)}" y="${r3(baseline)}" font-family="sans-serif" font-size="${fs}" fill="${color}" text-anchor="middle">${label}</text>`
+      + `</g>`;
+  }
+
   function scaledContent(content, W, H, scaleX, scaleY) {
     const r5 = n => Math.round(n * 100000) / 100000;
     const sx = r5(scaleX), sy = r5(scaleY);
@@ -840,11 +888,21 @@
 
     const printContent = scaledContent(content, W, H, printScaleX, printScaleY);
 
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}mm" height="${H}mm" viewBox="0 0 ${W} ${H}" shape-rendering="geometricPrecision" text-rendering="geometricPrecision">
+    // Split the sheet into an open/close pair so the print handler can stamp a
+    // different page number into each printed copy without re-running render().
+    const svgOpen = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}mm" height="${H}mm" viewBox="0 0 ${W} ${H}" shape-rendering="geometricPrecision" text-rendering="geometricPrecision">
 <defs>${defs}</defs>
 <rect x="0" y="0" width="${W}" height="${H}" fill="#ffffff"/>
 ${printContent}
-</svg>`;
+`;
+    const svgClose = `</svg>`;
+    const numberOn = els.numberPages.checked;
+    // size the page number to the grid spacing (clamped for legibility on very
+    // fine grids and to keep wide-ruled grids from getting a giant number).
+    const numFs = clamp(spacing, 2, 6);
+    // preview shows a single sheet; page 1's number if numbering is on
+    const svg = svgOpen + (numberOn ? pageNumberLabel(1, W, H, color, numFs) : "") + svgClose;
+    window._printBase = { svgOpen, svgClose, W, H, color, fs: numFs };
 
     $("paper-wrap").innerHTML = svg;
     // preview scaling: fit to stage height-ish
@@ -952,13 +1010,34 @@ ${printContent}
    "interlineGap","showMidline","showConfigLabel",
    "uniformMargin","marginAll","mTop","mRight","mBottom","mLeft","showMarginGuide",
    "cutPreset","cutToSize","cutCols","cutRows","cropMarks","perTileMargin","guideDivision",
-   "scaleX","scaleY","showCalibration"].forEach(id => {
+   "scaleX","scaleY","showCalibration","pageCount","numberPages"].forEach(id => {
     const el = $(id);
     const ev = (el.type === "checkbox" || el.tagName === "SELECT") ? "change" : "input";
     el.addEventListener(ev, () => { syncVisibility(); render(); });
   });
 
-  els.printBtn.addEventListener("click", () => window.print());
+  els.printBtn.addEventListener("click", () => {
+    const N = Math.max(1, parseInt(els.pageCount.value) || 1);
+    const numberOn = els.numberPages.checked;
+    if (N > 1) {
+      // Build the numbered pages on demand so the editor stays light when idle.
+      const b = window._printBase;
+      let html = "";
+      for (let i = 1; i <= N; i++) {
+        const num = numberOn ? pageNumberLabel(i, b.W, b.H, b.color, b.fs) : "";
+        html += `<div class="print-page">${b.svgOpen}${num}${b.svgClose}</div>`;
+      }
+      $("print-pages").innerHTML = html;
+      document.documentElement.classList.add("printing-multi");
+      document.body.classList.add("printing-multi");
+    }
+    window.print();
+  });
+  window.addEventListener("afterprint", () => {
+    $("print-pages").innerHTML = "";
+    document.documentElement.classList.remove("printing-multi");
+    document.body.classList.remove("printing-multi");
+  });
   els.downloadBtn.addEventListener("click", () => {
     const blob = new Blob([window._lastSVG], { type: "image/svg+xml" });
     const url = URL.createObjectURL(blob);
@@ -976,10 +1055,10 @@ ${printContent}
   const SETTING_FIELDS = ["paperSize","customW","customH","gridType","spacingPreset",
     "spacing","majorEvery","weight","dotSize","color","colorPreset","marginAll",
     "mTop","mRight","mBottom","mLeft","cutPreset","cutToSize","cutCols","cutRows",
-    "guideDivision","scaleX","scaleY",
+    "guideDivision","scaleX","scaleY","pageCount",
     "calligPreset","xHeight","ascRatio","descRatio","interlineGap","slantAngle","slantSpacing"];
   const SETTING_CHECKS = ["uniformMargin","showMarginGuide","cropMarks","perTileMargin","showCalibration",
-    "slantOn","showMidline","splitAscDesc","showConfigLabel"];
+    "numberPages","slantOn","showMidline","splitAscDesc","showConfigLabel"];
 
   function getSettings() {
     const s = { orientation };
