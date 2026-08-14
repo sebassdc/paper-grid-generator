@@ -634,13 +634,14 @@
   }
 
   // Page number centred at the bottom of the sheet, in the grid colour.
+  // `fs` (glyph height, mm) is derived from the grid spacing so the number
+  // reads as part of the grid rather than looming over it.
   // Coordinates are in mm (the SVG viewBox is in mm). Kept ~8 mm off the edge
   // so printers with a hardware margin don't clip it. A white knock-out patch
   // sized to the digits is painted behind the text so the number never sits on
   // top of the grid — whatever the paper size, margins or spacing leave beneath
   // it (e.g. on A5 the last dot row lands exactly where the number goes).
-  function pageNumberLabel(n, W, H, color) {
-    const fs = 4;                       // glyph height (mm)
+  function pageNumberLabel(n, W, H, color, fs) {
     const baseline = H - 8;             // baseline, 8 mm clear of the bottom edge
     const label = String(n);
     const charW = fs * 0.62;            // approx digit advance
@@ -896,9 +897,12 @@ ${printContent}
 `;
     const svgClose = `</svg>`;
     const numberOn = els.numberPages.checked;
+    // size the page number to the grid spacing (clamped for legibility on very
+    // fine grids and to keep wide-ruled grids from getting a giant number).
+    const numFs = clamp(spacing, 2, 6);
     // preview shows a single sheet; page 1's number if numbering is on
-    const svg = svgOpen + (numberOn ? pageNumberLabel(1, W, H, color) : "") + svgClose;
-    window._printBase = { svgOpen, svgClose, W, H, color };
+    const svg = svgOpen + (numberOn ? pageNumberLabel(1, W, H, color, numFs) : "") + svgClose;
+    window._printBase = { svgOpen, svgClose, W, H, color, fs: numFs };
 
     $("paper-wrap").innerHTML = svg;
     // preview scaling: fit to stage height-ish
@@ -1020,7 +1024,7 @@ ${printContent}
       const b = window._printBase;
       let html = "";
       for (let i = 1; i <= N; i++) {
-        const num = numberOn ? pageNumberLabel(i, b.W, b.H, b.color) : "";
+        const num = numberOn ? pageNumberLabel(i, b.W, b.H, b.color, b.fs) : "";
         html += `<div class="print-page">${b.svgOpen}${num}${b.svgClose}</div>`;
       }
       $("print-pages").innerHTML = html;
