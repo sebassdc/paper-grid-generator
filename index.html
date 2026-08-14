@@ -635,9 +635,25 @@
 
   // Page number centred at the bottom of the sheet, in the grid colour.
   // Coordinates are in mm (the SVG viewBox is in mm). Kept ~8 mm off the edge
-  // so printers with a hardware margin don't clip it.
+  // so printers with a hardware margin don't clip it. A white knock-out patch
+  // sized to the digits is painted behind the text so the number never sits on
+  // top of the grid — whatever the paper size, margins or spacing leave beneath
+  // it (e.g. on A5 the last dot row lands exactly where the number goes).
   function pageNumberLabel(n, W, H, color) {
-    return `<text x="${r3(W/2)}" y="${r3(H-8)}" font-family="sans-serif" font-size="4" fill="${color}" text-anchor="middle">${n}</text>`;
+    const fs = 4;                       // glyph height (mm)
+    const baseline = H - 8;             // baseline, 8 mm clear of the bottom edge
+    const label = String(n);
+    const charW = fs * 0.62;            // approx digit advance
+    const ascent = fs * 0.75;           // glyph top above the baseline
+    const padX = fs * 0.6, padTop = fs * 0.4, padBot = fs * 0.3;
+    const boxW = label.length * charW + padX * 2;
+    const boxH = ascent + padTop + padBot;
+    const boxX = W / 2 - boxW / 2;
+    const boxY = baseline - ascent - padTop;
+    return `<g>`
+      + `<rect x="${r3(boxX)}" y="${r3(boxY)}" width="${r3(boxW)}" height="${r3(boxH)}" fill="#ffffff"/>`
+      + `<text x="${r3(W/2)}" y="${r3(baseline)}" font-family="sans-serif" font-size="${fs}" fill="${color}" text-anchor="middle">${label}</text>`
+      + `</g>`;
   }
 
   function scaledContent(content, W, H, scaleX, scaleY) {
