@@ -1,0 +1,6 @@
+services:
+  app:
+    image: ${APP_IMAGE:?Set a reviewed immutable image tag or digest}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${BIND_PORT:?Coordinator assigns a loopback port}:80"
