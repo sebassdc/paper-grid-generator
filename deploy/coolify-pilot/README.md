@@ -1,17 +1,19 @@
-# Private Coolify pilot
+# Paper Grid on Coolify and Cloudflare
 
-Use this Compose file with the repository root as Coolify Base Directory and
-`/deploy/coolify-pilot/compose.yaml` as Docker Compose Location. Select Raw
-Compose, disable automatic/preview deployments, and leave all public domains
-empty. Pin the reviewed Git commit in Coolify. The base image is pinned by digest.
+Production resource: Paper Grid, managed by Coolify on the Framework host.
+Cloudflare Tunnel routes paper-grid.sebashurtado.com to http://127.0.0.1:8303.
+Keep Coolify's proxy disabled and its domain configuration empty. The existing
+Cloudflare DNS CNAME points to the Framework tunnel; no additional public ports.
 
-An infrastructure owner must first create the external network
-`coolify-paper-grid-pilot` using an explicitly reviewed unused subnet; this pilot
-uses `10.253.84.0/24`. The app binds only `127.0.0.1:8303` and has no persistent data.
+Use repository root as Base Directory, /deploy/coolify-pilot/compose.yaml as
+Compose Location, and Raw Compose. Pin a reviewed full Git commit. Automatic
+and preview deployments stay off. The historical folder name is retained to
+preserve the tested build layout.
 
-Deploy via Coolify's API, verify `/up`, then compare `/` bytes against the existing
-Paper Grid origin on `127.0.0.1:8103`. Keep Cloudflare tunneling unchanged. Deploying
-this branch never authorizes replacing the production origin or stopping it.
+The external network coolify-paper-grid-pilot uses10.253.84.0/24. No persistent
+volumes or private app settings are needed. Verify /up, compare / HTML bytes,
+and check /deployment.json to identify the new origin through Cloudflare.
 
-Rollback selects the previous tested Git commit and deploys it again. Keep image
-and deployment IDs in the machine's pilot report. No automatic Docker cleanup.
+Rollback deploys a previously verified commit; origin rollback can temporarily
+restore the retained old container on8103. Stop calls must include
+docker_cleanup=false. Never prune unrelated host Docker resources.
