@@ -1,0 +1,18 @@
+# Production managed by Coolify; Cloudflare Tunnel routes via its hostname proxy.
+# Loopback8303 is retained as a direct verification/rollback origin.
+services:
+  app:
+    build:
+      context: .
+      dockerfile: deploy/coolify-pilot/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8303:80"
+    labels:
+      - io.sebastian.purpose=coolify-paper-grid-production
+    mem_limit: 128m
+    cpus: 0.5
+networks:
+  default:
+    external: true
+    name: coolify-paper-grid-pilot
