@@ -1,0 +1,17 @@
+# Private pilot only. Cloudflare continues to use the existing production origin.
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: deploy/coolify-pilot/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8303:80"
+    labels:
+      io.sebastian.purpose: coolify-paper-grid-pilot
+    mem_limit: 128m
+    cpus: 0.5
+networks:
+  default:
+    external: true
+    name: coolify-paper-grid-pilot
