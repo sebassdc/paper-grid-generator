@@ -8,7 +8,7 @@ permissions:
   contents: read
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   static-image:
     runs-on: ubuntu-latest
@@ -23,3 +23,23 @@ jobs:
       - run: npm ci --prefix scripts/ci
       - run: scripts/ci/node_modules/.bin/playwright install --with-deps chromium
       - run: scripts/ci/check-image.sh
+
+  deploy:
+    needs: [static-image]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: coolify-production-paper-grid
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Submit exact tested SHA to stock signed Coolify webhook
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COOLIFY_WEBHOOK_SECRET: ${{ secrets.COOLIFY_WEBHOOK_SECRET }}
+          PRODUCTION_BRANCH: main
+          COOLIFY_APPLICATION_UUID: fl8r6qyzon1hiuy9vrmudevk
+        run: python3 scripts/ci/deploy-tested.py
