@@ -33,6 +33,3 @@ try {
   assert.deepEqual(errors, [])
   console.log('PASS: image routes, exact source bytes, grid switching and SVG download')
 } finally { await browser.close() }
-
-// Temporary controlled gate probe: application bytes are unchanged; production must stay put.
-assert.fail('Intentional CI gate verification: this test-only commit must never deploy')
