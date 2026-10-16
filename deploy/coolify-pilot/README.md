@@ -9,3 +9,12 @@ Public traffic: Cloudflare Tunnel → loopback Coolify Traefik proxy80 → app D
 Only POST /webhooks/source/github/events/manual on the public Paper Grid hostname routes to Coolify. It validates GitHub's HMAC signature before allowing deployment. The dashboard stays private over Tailscale; webhook secrets are stored only in GitHub settings and Coolify, never here.
 
 Operational configuration and rollback live on the host in ~/dev/coolify-pilot/README.md. Do not use host-wide Docker cleanup. A failed push deployment does not automatically revert Git history; inspect Coolify deployment logs and redeploy a known-good commit if necessary.
+
+## CI-gated production updates
+GitHub Actions static-image checks build the production image, verify HTTP bytes,
+assets and grid browser behavior. Only a successful trusted main push run submits
+its exact tested SHA to the signed Coolify endpoint. Direct GitHub push hook
+698704147 is disabled to prevent deployment before checks. PR runs never deploy.
+An app-specific HMAC secret grants no API/read access. Serialized deployment jobs
+skip obsolete runs when main HEAD differs from the tested SHA. Check both GitHub
+run success and final Coolify health before calling a release verified.

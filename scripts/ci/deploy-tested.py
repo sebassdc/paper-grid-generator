@@ -20,7 +20,7 @@ if deploy_repo!=repo:
  # Normal git push refuses history replacement; never force-push.
  assert os.environ.get('COOLIFY_SOURCE_PUSH_KEY')
  with tempfile.TemporaryDirectory() as folder:
-  key=pathlib.Path(folder)/'key';key.write_text(os.environ['COOLIFY_SOURCE_PUSH_KEY']);key.chmod(0o600)
+  key=pathlib.Path(folder)/'key';key.write_text(os.environ['COOLIFY_SOURCE_PUSH_KEY'].rstrip()+'\n');key.chmod(0o600)
   with urllib.request.urlopen('https://api.github.com/meta',timeout=30) as response:keys=json.load(response)['ssh_keys']
   known=pathlib.Path(folder)/'known_hosts';known.write_text(''.join('github.com '+k+'\n' for k in keys))
   command=f'ssh -i {key} -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile={known}'
